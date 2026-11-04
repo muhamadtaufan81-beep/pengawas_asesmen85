@@ -1,0 +1,21 @@
+name: pengawas_asesmen85
+description: Aplikasi kepengawasan Asesmen Online SMAN 85 Jakarta (alamat tidak ditampilkan kepada pengawas).
+publish_to: "none"
+version: 1.1.0+2
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_inappwebview: ^6.1.5
+  wakelock_plus: ^1.2.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
