@@ -85,12 +85,15 @@ jobs:
       - name: Buat folder platform Windows
         run: flutter create $CREATE_ARGS --platforms=windows .
 
+      - name: Izinkan coroutine lama untuk plugin WebView (kompiler MSVC baru menolaknya)
+        run: |
+          set -e
+          sed -i '/^project(/a add_definitions(-D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)' windows/CMakeLists.txt
+          grep -n -B1 'SILENCE_EXPERIMENTAL' windows/CMakeLists.txt
+
       - run: flutter pub get
 
       - name: Build Windows
-        env:
-          # Kompiler MSVC terbaru menolak coroutine eksperimental yang dipakai plugin WebView.
-          CL: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
         run: flutter build windows $BUILD_FLAGS
 
       - uses: actions/upload-artifact@v4
