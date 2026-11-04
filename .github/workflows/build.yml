@@ -49,6 +49,16 @@ jobs:
 
       - run: flutter pub get
 
+      - name: Perbaiki plugin Android (proguard tidak lagi didukung Gradle baru)
+        run: |
+          set -e
+          CACHE="${PUB_CACHE:-$HOME/.pub-cache}/hosted/pub.dev"
+          FILES=$(grep -rl --include='build.gradle*' 'proguard-android.txt' "$CACHE" 2>/dev/null || true)
+          for f in $FILES; do
+            echo "Memperbaiki: $f"
+            sed -i 's/proguard-android\.txt/proguard-android-optimize.txt/g' "$f"
+          done
+
       - name: Build APK
         run: flutter build apk $BUILD_FLAGS
 
@@ -78,6 +88,9 @@ jobs:
       - run: flutter pub get
 
       - name: Build Windows
+        env:
+          # Kompiler MSVC terbaru menolak coroutine eksperimental yang dipakai plugin WebView.
+          CL: /D_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
         run: flutter build windows $BUILD_FLAGS
 
       - uses: actions/upload-artifact@v4
