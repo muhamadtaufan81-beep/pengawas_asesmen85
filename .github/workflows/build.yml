@@ -14,6 +14,7 @@ jobs:
   android:
     name: Android (APK)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
@@ -36,10 +37,27 @@ jobs:
       - name: Pasang MainActivity (blokir screenshot) dan izin internet
         run: |
           set -e
-          ACT=$(find android/app/src/main/kotlin -name MainActivity.kt | head -n 1)
-          PKG_LINE=$(grep -m1 '^package ' "$ACT")
-          cp platform_setup/android/MainActivity.kt "$ACT"
-          sed -i "1s|^package .*|$PKG_LINE|" "$ACT"
+          ACT=$(find android/app/src/main -name MainActivity.kt -o -name MainActivity.java | head -n 1)
+          if [ -z "$ACT" ]; then
+            echo "MainActivity tidak ditemukan"; exit 1
+          fi
+          case "$ACT" in
+            *.kt)
+              PKG_LINE=$(grep -m1 '^package ' "$ACT")
+              cp platform_setup/android/MainActivity.kt "$ACT"
+              sed -i "1s|^package .*|$PKG_LINE|" "$ACT"
+              ;;
+            *)
+              echo "MainActivity berbentuk Java, hapus lalu pakai versi Kotlin"
+              DIR=$(dirname "$ACT")
+              PKG_LINE=$(grep -m1 '^package ' "$ACT")
+              rm "$ACT"
+              mkdir -p "$DIR"
+              ACT="$DIR/MainActivity.kt"
+              cp platform_setup/android/MainActivity.kt "$ACT"
+              sed -i "1s|^package .*|$PKG_LINE|" "$ACT"
+              ;;
+          esac
           MANIFEST=android/app/src/main/AndroidManifest.xml
           if ! grep -q 'android.permission.INTERNET' "$MANIFEST"; then
             sed -i '0,/<manifest[^>]*>/s//&\n    <uses-permission android:name="android.permission.INTERNET"\/>/' "$MANIFEST"
@@ -48,6 +66,14 @@ jobs:
           grep -n INTERNET "$MANIFEST"
 
       - run: flutter pub get
+
+      - name: Pasang ikon aplikasi Android
+        run: |
+          set -e
+          test -f platform_setup/icon.png || { echo "File platform_setup/icon.png tidak ditemukan"; exit 1; }
+          flutter pub add --dev flutter_launcher_icons
+          printf '%s\n' 'flutter_launcher_icons:' '  image_path: "platform_setup/icon.png"' '  android: true' '  ios: false' > flutter_launcher_icons.yaml
+          dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
 
       - name: Perbaiki plugin Android (proguard tidak lagi didukung Gradle baru)
         run: |
@@ -59,13 +85,43 @@ jobs:
             sed -i 's/proguard-android\.txt/proguard-android-optimize.txt/g' "$f"
           done
 
-      - name: Build APK
-        run: flutter build apk $BUILD_FLAGS
+      - name: Izinkan trafik http dan matikan shrink agar WebView stabil di semua perangkat
+        run: |
+          set -e
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if ! grep -q 'usesCleartextTraffic' "$MANIFEST"; then
+            sed -i '0,/<application/s//<application android:usesCleartextTraffic="true"/' "$MANIFEST"
+          fi
+          grep -n 'usesCleartextTraffic' "$MANIFEST"
+
+      # APK universal: satu file untuk semua tipe Android
+      # (ARM 32-bit, ARM 64-bit, dan x86_64/emulator)
+      - name: Build APK universal (semua arsitektur)
+        run: >
+          flutter build apk $BUILD_FLAGS --no-shrink
+          --target-platform android-arm,android-arm64,android-x64
+
+      - name: Simpan APK universal
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk dist/pengawas-universal.apk
+
+      # APK terpisah per arsitektur (ukuran lebih kecil)
+      - name: Build APK per arsitektur
+        run: >
+          flutter build apk $BUILD_FLAGS --no-shrink --split-per-abi
+
+      - name: Kumpulkan APK per arsitektur
+        run: |
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk dist/pengawas-arm32.apk
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk dist/pengawas-arm64.apk
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk dist/pengawas-x86_64.apk
+          ls -lh dist
 
       - uses: actions/upload-artifact@v4
         with:
           name: pengawas-android-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: dist/*.apk
           if-no-files-found: error
 
   windows:
@@ -92,6 +148,14 @@ jobs:
           grep -n -B1 'SILENCE_EXPERIMENTAL' windows/CMakeLists.txt
 
       - run: flutter pub get
+
+      - name: Pasang ikon aplikasi Windows
+        run: |
+          set -e
+          test -f platform_setup/icon.png || { echo "File platform_setup/icon.png tidak ditemukan"; exit 1; }
+          flutter pub add --dev flutter_launcher_icons
+          printf '%s\n' 'flutter_launcher_icons:' '  image_path: "platform_setup/icon.png"' '  android: false' '  ios: false' '  windows:' '    generate: true' '    image_path: "platform_setup/icon.png"' '    icon_size: 256' > flutter_launcher_icons.yaml
+          dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
 
       - name: Build Windows
         run: flutter build windows $BUILD_FLAGS
@@ -137,6 +201,14 @@ jobs:
           grep -n "platform :osx" macos/Podfile
 
       - run: flutter pub get
+
+      - name: Pasang ikon aplikasi macOS
+        run: |
+          set -e
+          test -f platform_setup/icon.png || { echo "File platform_setup/icon.png tidak ditemukan"; exit 1; }
+          flutter pub add --dev flutter_launcher_icons
+          printf '%s\n' 'flutter_launcher_icons:' '  image_path: "platform_setup/icon.png"' '  android: false' '  ios: false' '  macos:' '    generate: true' '    image_path: "platform_setup/icon.png"' > flutter_launcher_icons.yaml
+          dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
 
       - name: Build macOS
         run: flutter build macos $BUILD_FLAGS
