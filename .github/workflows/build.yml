@@ -1,7 +1,12 @@
 name: Build Aplikasi Pengawas
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      show_blocked_host:
+        description: "Diagnosis: tampilkan domain yang diblokir di pesan (hanya APK Android)"
+        type: boolean
+        default: false
   push:
     branches: [main]
 
@@ -97,8 +102,10 @@ jobs:
       # APK universal: satu file untuk semua tipe Android
       # (ARM 32-bit, ARM 64-bit, dan x86_64/emulator)
       - name: Build APK universal (semua arsitektur)
+        env:
+          DIAG: ${{ inputs.show_blocked_host == true && '--dart-define=SHOW_BLOCKED_HOST=true' || '' }}
         run: >
-          flutter build apk $BUILD_FLAGS --no-shrink
+          flutter build apk $BUILD_FLAGS $DIAG --no-shrink
           --target-platform android-arm,android-arm64,android-x64
 
       - name: Simpan APK universal
@@ -108,8 +115,10 @@ jobs:
 
       # APK terpisah per arsitektur (ukuran lebih kecil)
       - name: Build APK per arsitektur
+        env:
+          DIAG: ${{ inputs.show_blocked_host == true && '--dart-define=SHOW_BLOCKED_HOST=true' || '' }}
         run: >
-          flutter build apk $BUILD_FLAGS --no-shrink --split-per-abi
+          flutter build apk $BUILD_FLAGS $DIAG --no-shrink --split-per-abi
 
       - name: Kumpulkan APK per arsitektur
         run: |
