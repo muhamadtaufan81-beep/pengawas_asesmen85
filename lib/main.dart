@@ -34,6 +34,16 @@ String _dec(String s) {
 
 const String kAppTitle = 'Pengawas Asesmen Online';
 
+// Domain tambahan yang boleh dibuka di jendela utama (selain domain sistem
+// asesmen), misalnya domain login atau pengalihan. Isi bila diperlukan,
+// contoh: const ['accounts.google.com'].
+const List<String> _extraHosts = <String>[];
+
+// Hanya untuk diagnosis: bila build dijalankan dengan
+// --dart-define=SHOW_BLOCKED_HOST=true, pesan blokir menampilkan domain
+// yang diblokir. Pada build normal nilainya false, alamat tetap tersembunyi.
+const bool kShowBlockedHost = bool.fromEnvironment('SHOW_BLOCKED_HOST');
+
 bool get _isMobile => Platform.isAndroid || Platform.isIOS;
 
 // ============================================================
@@ -83,6 +93,7 @@ class _PengawasPageState extends State<PengawasPage>
   double _progress = 0;
   bool _hasError = false;
   bool _blockedNotice = false;
+  String _blockedText = 'Tautan ke luar sistem diblokir.';
   bool _cover = false; // penutup saat aplikasi di app switcher (iOS/Android)
 
   @override
@@ -108,19 +119,38 @@ class _PengawasPageState extends State<PengawasPage>
     if (_cover != inactive) setState(() => _cover = inactive);
   }
 
-  bool _isAllowed(Uri? uri) {
-    if (uri == null) return false;
-    if (uri.scheme == 'about' || uri.scheme == 'blob' || uri.scheme == 'data') {
-      return true;
+  bool _hostAllowed(String host) {
+    final h = host.toLowerCase();
+    if (h == _host || h.endsWith('.$_host')) return true;
+    for (final e in _extraHosts) {
+      if (h == e || h.endsWith('.$e')) return true;
     }
-    if (uri.scheme != 'https') return false;
-    final h = uri.host.toLowerCase();
-    return h == _host || h.endsWith('.$_host');
+    return false;
   }
 
-  void _flashBlocked() {
+  // [mainFrame] = true untuk perpindahan halaman utama. Muatan sub-frame
+  // (iframe, video, dsb.) dibolehkan karena tidak membawa pengawas keluar
+  // dari halaman asesmen; WebView Android memanggil pengecekan ini juga
+  // untuk perpindahan di dalam iframe.
+  bool _isAllowed(Uri? uri, {bool mainFrame = true}) {
+    if (uri == null) return !mainFrame;
+    final s = uri.scheme.toLowerCase();
+    if (s == 'about' || s == 'blob' || s == 'data' || s == 'javascript') {
+      return true;
+    }
+    if (s != 'https' && s != 'http') return false;
+    if (!mainFrame) return true;
+    return _hostAllowed(uri.host);
+  }
+
+  void _flashBlocked(Uri? uri) {
     if (_blockedNotice) return;
-    setState(() => _blockedNotice = true);
+    setState(() {
+      _blockedText = kShowBlockedHost
+          ? 'Diblokir: ${uri?.scheme}://${uri?.host}'
+          : 'Tautan ke luar sistem diblokir.';
+      _blockedNotice = true;
+    });
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) setState(() => _blockedNotice = false);
     });
@@ -199,10 +229,11 @@ class _PengawasPageState extends State<PengawasPage>
                 cacheEnabled: true,
               ),
               shouldOverrideUrlLoading: (controller, action) async {
-                if (_isAllowed(action.request.url)) {
+                final url = action.request.url;
+                if (_isAllowed(url, mainFrame: action.isForMainFrame)) {
                   return NavigationActionPolicy.ALLOW;
                 }
-                _flashBlocked();
+                _flashBlocked(url);
                 return NavigationActionPolicy.CANCEL;
               },
               onCreateWindow: (controller, action) async {
@@ -210,7 +241,7 @@ class _PengawasPageState extends State<PengawasPage>
                 if (_isAllowed(url)) {
                   controller.loadUrl(urlRequest: URLRequest(url: url));
                 } else {
-                  _flashBlocked();
+                  _flashBlocked(url);
                 }
                 return false;
               },
@@ -235,13 +266,13 @@ class _PengawasPageState extends State<PengawasPage>
             if (_hasError) _ErrorView(onRetry: _reload),
 
             if (_blockedNotice)
-              const Positioned(
+              Positioned(
                 left: 16,
                 right: 16,
                 bottom: 24,
                 child: _Banner(
-                  text: 'Tautan ke luar sistem diblokir.',
-                  color: Color(0xFFB3261E),
+                  text: _blockedText,
+                  color: const Color(0xFFB3261E),
                 ),
               ),
 
